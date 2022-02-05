@@ -12,7 +12,7 @@ Bridge Controller through PC to switch
 ### Suported Switch Vers.
 :white_check_mark: 13.6.x
 
-Tested on Raspberry 3B+ Raspbian
+Tested on Raspberry 3B+ Raspbian (also headless support)
 
 ## Features
 Emulation of JOYCON_R, JOYCON_L and PRO_CONTROLLER. Able to send:
