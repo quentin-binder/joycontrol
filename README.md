@@ -1,16 +1,19 @@
-# joycontrol
+# Emulate Switch controller on PC
 
-Branch: master->amiibo_edits
+Fork form https://github.com/Poohl/joycontrol and https://github.com/z80z80z80/joycontrol-bridge
 
 Emulate Nintendo Switch Controllers over Bluetooth.
 
-Tested on Raspberry 4B Raspbian, should work on 3B+ too and anything that can do the setup.
+Bridge Controller through PC to switch
+
+Tested on Raspberry 3B+ Raspbian
 
 ## Features
 Emulation of JOYCON_R, JOYCON_L and PRO_CONTROLLER. Able to send:
 - button commands
 - stick state
-- nfc for amiibo read & owner registration
+- send controller input to switch
+- ~~nfc for amiibo read & owner registration~~
 
 ## Installation
 - Install dependencies  
