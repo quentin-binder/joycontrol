@@ -6,6 +6,9 @@ Emulate Nintendo Switch Controllers over Bluetooth.
 
 Bridge Controller through PC to switch
 
+### Suported Controllers
+:white_check_mark: Google Stadia 
+
 Tested on Raspberry 3B+ Raspbian
 
 ## Features
@@ -24,7 +27,7 @@ sudo apt install python3-dbus libhidapi-hidraw0 libbluetooth-dev bluez
   Python: (a setup.py is present but not yet up to date)  
   Note that pip here _has_ to be run as root, as otherwise the packages are not available to the root user.
 ```bash
-sudo pip3 install aioconsole hid crc8
+sudo pip3 install aioconsole hid crc8 pygame
 ```
  If you are unsure if the packages are properly installed, try running `sudo python3` and import each using `import package_name`.
 
