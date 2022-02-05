@@ -9,6 +9,9 @@ Bridge Controller through PC to switch
 ### Suported Controllers
 :white_check_mark: Google Stadia 
 
+### Suported Switch Vers.
+:white_check_mark: 13.6.x
+
 Tested on Raspberry 3B+ Raspbian
 
 ## Features
