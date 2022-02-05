@@ -4,6 +4,8 @@ import argparse
 import asyncio
 import logging
 import os
+import pygame as pygame
+import time
 
 from aioconsole import ainput
 
@@ -11,7 +13,8 @@ import joycontrol.debug as debug
 from joycontrol import logging_default as log, utils
 from joycontrol.command_line_interface import ControllerCLI
 from joycontrol.controller import Controller
-from joycontrol.controller_state import ControllerState, button_push, button_press, button_release
+from joycontrol.controller_state import ControllerState, button_push, button_press, button_release, button_update, \
+    stick_update
 from joycontrol.memory import FlashMemory
 from joycontrol.protocol import controller_protocol_factory
 from joycontrol.server import create_hid_server
@@ -138,6 +141,111 @@ async def test_controller_buttons(controller_state: ControllerState):
     await button_push(controller_state, 'home')
 
 
+def init_relais():
+    # todo: - button layout parsing from config file
+    #       - basic GUI to show/generate config file + to start/stop the script
+    os.putenv('SDL_VIDEODRIVER', 'dummy')
+    pygame.display.init()
+    pygame.init()
+    pygame.joystick.init()
+    joystick = pygame.joystick.Joystick(0)
+    joystick.init()
+
+    buttons = {
+        'a': 1,
+        'b': 0,
+        'x': 3,
+        'y': 2,
+        'plus': 7,
+        'l_stick': 9,
+        'r_stick': 10,
+        'capture': 12,
+        'minus': 6,
+        'home': 8,
+        'l': 4,
+        'r': 5,
+    }
+
+    analogs = {
+        'l_stick_analog': [0, 1],  # [horizontal axis, vertical axis] for analog sticks
+        'r_stick_analog': [2, 3],
+        'zl': [5, -0.5],  # [axis, threshold] for analog axes to be converted to buttons
+        'zr': [4, -0.5],
+    }
+
+    hat_id = 0
+
+    return buttons, analogs, hat_id
+
+async def update_stick(controller_state, analogs, joystick):
+    for key in analogs.keys():
+        if key[-6:] == 'analog':  # analog sticks
+            val_h = round(joystick.get_axis(analogs[key][0]), 3)
+            val_v = round(joystick.get_axis(analogs[key][1]), 3)
+
+            vals = {}
+            vals['h'] = abs(int(((val_h + 1) / 2) * 4096) - 1)  # converts to the range of [0, 4096)
+            vals['v'] = abs(int(((
+                                             -1 * val_v + 1) / 2) * 4096) - 1)  # converts to the range of [0, 4096) + inversion of the vertical axis
+            # inversion might be an issue for other controllers...
+
+            await stick_update(controller_state, key, vals)
+
+        else:  # analog triggers -> button conversion
+            threshold = analogs[key][1]
+            if joystick.get_axis(analogs[key][0]) > threshold:
+                # print(1)
+                await button_update(controller_state, key, 1)
+            else:
+                # print()
+                await button_update(controller_state, key, 0)
+
+async def relais(controller_state):
+    buttons, analogs, hat_id = init_relais()
+    buttons = dict((val, key) for key, val in buttons.items())
+
+    joystick = pygame.joystick.Joystick(0)
+    joystick.init()
+    skip = 0
+    while True:
+        skip += 1
+        await update_stick(controller_state, analogs, joystick)
+        for event in pygame.event.get():  # User did something.
+
+            if event.type == pygame.JOYBUTTONDOWN or event.type == pygame.JOYBUTTONUP:
+                for button_id in list(buttons.keys()):
+                    val = joystick.get_button(button_id)
+                    await button_update(controller_state, buttons[button_id], val)
+
+                    # this is working but can get unresponsive if axes are moved to frequently (too many events in the queue to be processed fast)
+                # I'll leave this commented out for better responsiveness in games like mario kart.
+                # If you want to use your xbox/playstation controller as a pro controller, consider using something like the 8bitdo adapters, you'll have more fun this way.
+
+           # elif event.type == pygame.JOYAXISMOTION and skip % 10 == 0:
+           #     await update_stick(controller_state, analogs, joystick)
+
+            elif event.type == pygame.JOYHATMOTION:
+                hats = joystick.get_hat(hat_id)
+
+                if hats[0] == 0:  # left/right is unpressed
+                    await button_update(controller_state, 'left', 0)
+                    await button_update(controller_state, 'right', 0)
+                elif hats[0] == 1:  # right is pressed
+                    await button_update(controller_state, 'right', 1)
+                elif hats[0] == -1:  # left is pressed
+                    await button_update(controller_state, 'left', 1)
+
+                if hats[1] == 0:  # up/down is unpressed
+                    await button_update(controller_state, 'up', 0)
+                    await button_update(controller_state, 'down', 0)
+                elif hats[1] == 1:  # up is pressed
+                    await button_update(controller_state, 'up', 1)
+                elif hats[1] == -1:  # down is pressed
+                    await button_update(controller_state, 'down', 1)
+
+        time.sleep(0.001)
+
+
 def ensure_valid_button(controller_state, *buttons):
     """
     Raise ValueError if any of the given buttons os not part of the controller state.
@@ -165,6 +273,7 @@ async def mash_button(controller_state, button, interval):
     # await future to trigger exceptions in case something went wrong
     await user_input
 
+
 def _register_commands_with_controller_state(controller_state, cli):
     """
     Commands registered here can use the given controller state.
@@ -172,6 +281,7 @@ def _register_commands_with_controller_state(controller_state, cli):
     :param cli:
     :param controller_state:
     """
+
     async def test_buttons():
         """
         test_buttons - Navigates to the "Test Controller Buttons" menu and presses all buttons.
@@ -179,6 +289,26 @@ def _register_commands_with_controller_state(controller_state, cli):
         await test_controller_buttons(controller_state)
 
     cli.add_command(test_buttons.__name__, test_buttons)
+
+    # init_relais command
+    async def _run_init_relais():
+        """
+        init_relais - init the relais and configure button layout
+        """
+        init_relais()
+
+    # add the script from above
+    cli.add_command('init_relais', _run_init_relais)
+
+    # relais command
+    async def _run_relais():
+        """
+        relais - run the relais
+        """
+        await relais(controller_state)
+
+    # add the script from above
+    cli.add_command('relais', _run_relais)
 
     # Mash a button command
     async def mash(*args):
@@ -261,7 +391,7 @@ def _register_commands_with_controller_state(controller_state, cli):
             nfc <file_name>          Set controller state NFC content to file
             nfc remove               Remove NFC content from controller state
         """
-        #logger.error('NFC Support was removed from joycontrol - see https://github.com/mart1nro/joycontrol/issues/80')
+        # logger.error('NFC Support was removed from joycontrol - see https://github.com/mart1nro/joycontrol/issues/80')
         if controller_state.get_controller() == Controller.JOYCON_L:
             raise ValueError('NFC content cannot be set for JOYCON_L')
         elif not args:
@@ -291,6 +421,7 @@ def _register_commands_with_controller_state(controller_state, cli):
 
     cli.add_command(unpause.__name__, unpause)
 
+
 async def _main(args):
     # Get controller name to emulate from arguments
     controller = Controller.from_arg(args.controller)
@@ -303,10 +434,9 @@ async def _main(args):
         # Create memory containing default controller stick calibration
         spi_flash = FlashMemory()
 
-
     with utils.get_output(path=args.log, default=None) as capture_file:
         # prepare the the emulated controller
-        factory = controller_protocol_factory(controller, spi_flash=spi_flash, reconnect = args.reconnect_bt_addr)
+        factory = controller_protocol_factory(controller, spi_flash=spi_flash, reconnect=args.reconnect_bt_addr)
         ctl_psm, itr_psm = 17, 19
         transport, protocol = await create_hid_server(factory, reconnect_bt_addr=args.reconnect_bt_addr,
                                                       ctl_psm=ctl_psm,
@@ -315,6 +445,8 @@ async def _main(args):
                                                       interactive=True)
 
         controller_state = protocol.get_controller_state()
+
+        await relais(controller_state)
 
         # Create command line interface and add some extra commands
         cli = ControllerCLI(controller_state)
@@ -340,7 +472,7 @@ if __name__ == '__main__':
         raise PermissionError('Script must be run as root!')
 
     # setup logging
-    #log.configure(console_level=logging.ERROR)
+    # log.configure(console_level=logging.ERROR)
     log.configure()
 
     parser = argparse.ArgumentParser()
@@ -350,7 +482,8 @@ if __name__ == '__main__':
     parser.add_argument('--spi_flash', help="controller SPI-memory dump to use")
     parser.add_argument('-r', '--reconnect_bt_addr', type=str, default=None,
                         help='The Switch console Bluetooth address (or "auto" for automatic detection), for reconnecting as an already paired controller.')
-    parser.add_argument('--nfc', type=str, default=None, help="amiibo dump placed on the controller. Äquivalent to the nfc command.")
+    parser.add_argument('--nfc', type=str, default=None,
+                        help="amiibo dump placed on the controller. Äquivalent to the nfc command.")
     args = parser.parse_args()
 
     loop = asyncio.get_event_loop()
